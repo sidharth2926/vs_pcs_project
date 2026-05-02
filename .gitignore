@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+artifacts/
+.pip_tmp/
+.python_packages/
