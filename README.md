@@ -33,7 +33,7 @@ Run the assignment-ready controller template:
 python simulation_template.py
 ```
 
-Generated artifacts are saved under `artifacts/<scheme>/`.
+Generated artifacts are saved under `artifacts/<run_name>/<scheme>/<pulse>/`.
 
 ## What gets saved
 
@@ -59,6 +59,7 @@ Edit `simulation_template.py` and use `build_my_simulation()` as the control pan
 - Plot backend and style using `matplotlib` or `seaborn`
 - BER-vs-SNR waterfall curve settings
 - BER test bits from `random` data or repeated PCM data using `pcm_repeated`
+- Per-run artifact folder name using `set_output(..., run_name="assignment_demo")`
 
 ## Assignment demo artifacts
 
@@ -75,3 +76,4 @@ The controller template can generate the expected demo outputs:
 - BER-vs-SNR waterfall curve
 
 In `simulation_template.py`, use `set_output(config, save_plots=True, show_plots=False)` to save image files for slides.
+Set `DEMO_MODE = "pulse_sweep"` in `simulation_template.py` to generate eye diagrams for all supported line-code and pulse combinations: `on_off`, `polar`, `bipolar` with `nrz`, `rz`, `raised_cosine`, and `sinc`.

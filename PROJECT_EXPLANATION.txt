@@ -1,0 +1,1806 @@
+END-TO-END DIGITAL COMMUNICATION SYSTEM EXPLANATION
+
+This project simulates a complete digital communication chain:
+
+Analog source signal
+-> Sampling
+-> Quantization
+-> PCM bit generation
+-> Line coding
+-> Pulse shaping
+-> AWGN channel
+-> Matched filtering
+-> Bit detection
+-> BER calculation
+-> BER vs SNR waterfall curve
+
+The main file to control the project is simulation_template.py. Treat it like
+the "test code" file for the assignment. The actual implementation of each
+block is inside the comm_system folder.
+
+
+1. PROJECT STRUCTURE
+
+simulation_template.py
+This is the assignment/demo controller. You change variables here to control
+the whole system.
+
+main.py
+This is a simpler runner. For the assignment, simulation_template.py is more
+useful because it has helper functions for every block.
+
+comm_system/config.py
+Contains dataclasses that store all simulation parameters.
+
+comm_system/source.py
+Generates the analog source signal and samples it.
+
+comm_system/pcm.py
+Performs quantization and converts samples into PCM bits.
+
+comm_system/line_coding.py
+Converts bits into line-coded signal levels.
+
+comm_system/pulse_shaping.py
+Creates NRZ, RZ, raised cosine, sinc, and other pulses, then shapes symbols.
+
+comm_system/channel.py
+Adds AWGN noise to the transmitted waveform.
+
+comm_system/receiver.py
+Implements the matched filter, bit decision logic, and BER calculation.
+
+comm_system/visualization.py
+Creates all plots and eye diagrams.
+
+comm_system/pipeline.py
+Connects all blocks together and runs the complete simulation.
+
+
+2. MAIN SIMULATION FLOW
+
+The full system runs inside run_simulation(config) in comm_system/pipeline.py.
+
+The order is:
+
+1. generate_analog_signal()
+2. sample_signal()
+3. quantize_samples()
+4. build_bitstream()
+5. encode_line()
+6. build_pulse()
+7. shape_symbols()
+8. add_awgn()
+9. matched_filter_receive()
+10. decide_bits()
+11. bit_error_rate()
+12. render_all_figures()
+
+This is the full transmitter-channel-receiver chain.
+
+
+3. CONFIGURATION SYSTEM
+
+The file comm_system/config.py defines configuration classes:
+
+SourceConfig
+SamplingConfig
+QuantizerConfig
+LineCodeConfig
+PulseShapeConfig
+ChannelConfig
+ReceiverConfig
+OutputConfig
+BerCurveConfig
+SimulationConfig
+
+These classes store variables. The signal processing functions read values
+from these configs.
+
+For example:
+
+config.source.frequency_hz = 5.0
+config.quantizer.bits_per_sample = 4
+config.line_code.scheme = "polar"
+config.pulse_shape.pulse = "raised_cosine"
+config.channel.snr_db = 18.0
+
+Changing these variables changes the simulation output.
+
+
+4. SOURCE SIGNAL BLOCK
+
+File:
+comm_system/source.py
+
+Function:
+generate_analog_signal(config.source)
+
+Purpose:
+This block generates the analog source signal m(t).
+
+Supported source waveforms:
+
+sine
+cosine
+square
+multi_tone
+
+Important variables:
+
+waveform
+Selects the type of analog signal.
+
+amplitude
+Controls the height of the main signal.
+
+frequency_hz
+Controls the main signal frequency.
+
+phase_rad
+Shifts the waveform in phase.
+
+secondary_amplitude
+Used for multi_tone signals. Controls the amplitude of the second tone.
+
+secondary_frequency_hz
+Used for multi_tone signals. Controls the frequency of the second tone.
+
+secondary_phase_rad
+Used for multi_tone signals. Controls the phase of the second tone.
+
+dc_offset
+Moves the entire signal up or down.
+
+duration_s
+Controls how long the signal exists in seconds.
+
+analog_oversample_factor
+Controls how finely the analog signal is represented before sampling.
+
+Important concept:
+Python cannot create a truly continuous-time signal, so the code represents
+the analog signal using a dense time array. This is a standard simulation
+method.
+
+Output:
+analog_time
+analog_signal
+
+
+5. SAMPLING BLOCK
+
+File:
+comm_system/source.py
+
+Function:
+sample_signal(analog_time, analog_signal, config.sampling)
+
+Purpose:
+This block samples the analog signal at regular time intervals.
+
+Important variables:
+
+sampling_rate_hz
+Controls how many samples are taken per second.
+
+sample_phase_s
+Shifts the sampling instants in time.
+
+Effect of variables:
+
+Increasing sampling_rate_hz gives more samples and a better digital
+representation of the analog signal.
+
+Decreasing sampling_rate_hz gives fewer samples and can cause poor
+representation or aliasing.
+
+Changing sample_phase_s changes where the samples are taken on the waveform.
+
+Outputs:
+sample_time
+sampled_signal
+
+Saved files/plots:
+01_source_sampling_quantization.png
+quantized_samples.csv
+
+
+6. QUANTIZATION AND PCM BLOCK
+
+File:
+comm_system/pcm.py
+
+Functions:
+quantize_samples()
+build_bitstream()
+resolve_quantizer_settings()
+
+Purpose:
+This block converts sampled analog values into discrete quantized values and
+then into binary PCM words.
+
+Important variables:
+
+bits_per_sample
+Number of bits used to represent each sampled value.
+
+quantization_levels
+Directly sets the number of quantization levels. Use either bits_per_sample
+or quantization_levels.
+
+min_value
+Minimum input value of the quantizer range.
+
+max_value
+Maximum input value of the quantizer range.
+
+How levels are calculated:
+
+If bits_per_sample = 4:
+quantization_levels = 2^4 = 16
+
+Quantization step:
+
+step = (max_value - min_value) / (levels - 1)
+
+How it works:
+
+1. The sampled values are clipped between min_value and max_value.
+2. Each clipped sample is mapped to the nearest quantization index.
+3. Each quantization index is converted to a binary PCM word.
+4. All PCM words are flattened into one long bitstream.
+
+Example:
+
+If bits_per_sample = 4 and a sample maps to index 5, then its PCM word is:
+0101
+
+Effect of variables:
+
+Increasing bits_per_sample increases accuracy but creates more bits.
+
+Decreasing bits_per_sample creates more quantization error but fewer bits.
+
+Increasing the quantizer range can prevent clipping.
+
+Making the quantizer range too large can waste levels and reduce resolution
+near the actual signal values.
+
+Outputs:
+quantized_signal
+quantizer_indices
+pcm_words
+bitstream
+
+Saved files/plots:
+quantized_samples.csv
+quantized_words.txt
+bitstream.txt
+02_bitstream_preview.png
+
+
+7. LINE CODING BLOCK
+
+File:
+comm_system/line_coding.py
+
+Function:
+encode_line(bits, config.line_code)
+
+Purpose:
+This block converts binary bits into electrical signal levels.
+
+Supported schemes:
+
+on_off
+Bit 1 becomes +A.
+Bit 0 becomes 0.
+
+polar
+Bit 1 becomes +A.
+Bit 0 becomes -A.
+
+bipolar
+Bit 1 alternates between +A and -A.
+Bit 0 becomes 0.
+
+Important variables:
+
+scheme
+Selects on_off, polar, or bipolar.
+
+one_level
+The amplitude used for bit 1.
+
+zero_level
+The amplitude used for bit 0 in on_off or polar signaling.
+
+bipolar_zero_level
+The level used for bit 0 in bipolar signaling. Usually 0.
+
+bipolar_first_mark_positive
+Controls whether the first bit 1 in bipolar coding is positive or negative.
+
+Effect of variables:
+
+Increasing one_level increases transmitted signal amplitude.
+
+For polar signaling, changing zero_level changes the level used for bit 0.
+
+For bipolar signaling, changing bipolar_first_mark_positive changes the
+starting polarity of the first 1.
+
+Outputs:
+line_symbols
+
+Saved files/plots:
+line_symbols.txt
+03_line_symbols.png
+
+
+8. PULSE SHAPING BLOCK
+
+File:
+comm_system/pulse_shaping.py
+
+Functions:
+build_pulse()
+shape_symbols()
+
+Purpose:
+This block converts line-coded symbols into a waveform by applying a pulse
+shape.
+
+Supported pulse shapes:
+
+nrz
+Non-return-to-zero rectangular pulse.
+
+rectangular
+Same behavior as nrz.
+
+rz
+Return-to-zero pulse.
+
+raised_cosine
+Raised cosine pulse.
+
+rc
+Alias for raised_cosine.
+
+sinc
+Sinc pulse.
+
+half_sine
+Half-sine pulse.
+
+Important variables:
+
+pulse
+Selects the pulse shape.
+
+samples_per_symbol
+Controls how many waveform samples represent one bit or symbol.
+
+amplitude
+Controls pulse amplitude.
+
+rolloff
+Controls the raised cosine rolloff factor.
+
+span_symbols
+Controls how many symbol periods the raised cosine or sinc pulse spans.
+
+rz_duty_cycle
+Controls how much of one symbol period the RZ pulse remains active.
+
+How shape_symbols() works:
+
+1. It creates an upsampled signal.
+2. It places one line-coded symbol every samples_per_symbol samples.
+3. It convolves the upsampled symbol stream with the selected pulse.
+
+Mathematically:
+
+waveform = upsampled symbols convolved with pulse
+
+Effect of pulse choice:
+
+NRZ gives a rectangular waveform.
+
+RZ returns to zero during each bit interval.
+
+Raised cosine produces smoother transitions and helps reduce inter-symbol
+interference.
+
+Sinc approximates an ideal Nyquist pulse but has ringing due to truncation.
+
+Effect of samples_per_symbol:
+
+Increasing samples_per_symbol gives smoother-looking waveforms and eye
+diagrams but increases computation.
+
+Effect of rolloff:
+
+For raised cosine, smaller rolloff gives narrower bandwidth but longer
+time-domain ringing. Larger rolloff gives wider bandwidth but better time
+localization.
+
+Outputs:
+pulse
+transmit_waveform
+
+Saved files/plots:
+pulse_shape.txt
+05_eye_tx.png
+08_pulse_time_domain.png
+09_pulse_frequency_domain.png
+
+
+9. AWGN CHANNEL BLOCK
+
+File:
+comm_system/channel.py
+
+Function:
+add_awgn(signal, config.channel)
+
+Purpose:
+This block simulates an additive white Gaussian noise channel.
+
+Important variables:
+
+noise_enabled
+Turns noise on or off.
+
+snr_db
+Controls signal-to-noise ratio in decibels.
+
+noise_std
+Allows manually setting the noise standard deviation. If this is set, snr_db
+is not used to calculate noise.
+
+attenuation
+Scales the transmitted signal before noise is added.
+
+dc_offset
+Adds a constant offset to the channel signal.
+
+random_seed
+Controls random noise reproducibility.
+
+Noise calculation:
+
+signal_power = mean(signal^2)
+snr_linear = 10^(snr_db / 10)
+noise_power = signal_power / snr_linear
+noise_std = sqrt(noise_power)
+
+Important note:
+The correct relationship is noise_power = signal_power / snr_linear.
+
+Effect of variables:
+
+Increasing snr_db reduces noise and usually reduces BER.
+
+Decreasing snr_db increases noise and usually increases BER.
+
+Setting noise_enabled = False creates a noiseless channel.
+
+Increasing attenuation reduces or increases signal strength depending on its
+value.
+
+Changing random_seed changes the exact noise samples.
+
+Outputs:
+received_waveform
+noise
+
+Saved files/plots:
+noise_samples.txt
+06_eye_rx.png
+04_tx_rx_waveforms.png
+
+
+10. MATCHED FILTER BLOCK
+
+File:
+comm_system/receiver.py
+
+Function:
+matched_filter_receive()
+
+Purpose:
+This block filters the noisy received waveform using a matched filter.
+
+How it works:
+
+The matched filter is created by reversing the transmit pulse:
+
+matched filter impulse response = pulse[::-1]
+
+Then the received signal is convolved with this reversed pulse:
+
+matched = convolve(received_waveform, pulse[::-1])
+
+Why it is used:
+
+The matched filter maximizes the signal-to-noise ratio at the sampling instant
+when the receiver knows the transmitted pulse shape.
+
+Important variables:
+
+sample_offset
+Moves the receiver decision sampling point.
+
+samples_per_symbol
+Controls spacing between receiver symbol samples.
+
+Effect of variables:
+
+If sample_offset is correct, the receiver samples near the peak of the matched
+filter output.
+
+If sample_offset is wrong, the receiver may sample at the wrong time and BER
+can increase.
+
+Outputs:
+matched_waveform
+symbol_samples
+
+Saved files/plots:
+07_eye_matched.png
+04_tx_rx_waveforms.png
+
+
+11. BIT DETECTION BLOCK
+
+File:
+comm_system/receiver.py
+
+Function:
+decide_bits()
+
+Purpose:
+This block converts matched-filter symbol samples back into detected bits.
+
+Decision logic:
+
+For on_off:
+If sample >= threshold, decide 1.
+Otherwise, decide 0.
+
+For polar:
+If sample >= threshold, decide 1.
+Otherwise, decide 0.
+Usually the threshold is 0.
+
+For bipolar:
+If abs(sample) >= threshold, decide 1.
+Otherwise, decide 0.
+
+Important variables:
+
+decision_threshold
+Controls the detection threshold.
+
+normalize_threshold_to_pulse_energy
+If True, threshold is multiplied by pulse energy.
+
+bipolar_use_absolute_value
+Important for bipolar line coding because both positive and negative pulses
+represent bit 1.
+
+Effect of variables:
+
+If threshold is too high, some 1 bits may be detected as 0.
+
+If threshold is too low, noise may cause some 0 bits to be detected as 1.
+
+For bipolar coding, disabling bipolar_use_absolute_value can cause negative
+1 pulses to be detected incorrectly.
+
+Outputs:
+recovered_bits
+
+Saved files:
+recovered_bitstream.txt
+
+
+12. BER CALCULATION
+
+File:
+comm_system/receiver.py
+
+Function:
+bit_error_rate(reference_bits, recovered_bits)
+
+Purpose:
+This block compares transmitted bits and recovered bits.
+
+Formula:
+
+BER = number of wrong bits / total number of compared bits
+
+Effect:
+
+Low BER means the receiver recovered most bits correctly.
+
+High BER means noise, pulse distortion, threshold error, or timing error is
+causing many bit errors.
+
+Saved files:
+metrics.json
+
+
+13. BER VS SNR WATERFALL CURVE
+
+File:
+comm_system/pipeline.py
+
+Function:
+run_ber_curve()
+
+Purpose:
+This block runs the entire transmitter-receiver chain for multiple SNR values
+and calculates BER at each SNR.
+
+Important variables:
+
+enabled
+Turns BER curve generation on or off.
+
+snr_db_values
+The list of SNR values to simulate.
+
+min_bit_count
+Number of bits used for each SNR point.
+
+random_seed
+Controls the random bit sequence.
+
+bit_source
+Can be random or pcm_repeated.
+
+How it works:
+
+1. Generate or repeat a large bitstream.
+2. For each SNR value, encode the bits.
+3. Pulse shape the encoded symbols.
+4. Add AWGN noise for that SNR.
+5. Pass through the matched filter.
+6. Detect bits.
+7. Count bit errors.
+8. Save BER for that SNR.
+9. Plot BER vs SNR using semilog scale.
+
+Saved files/plots:
+ber_vs_snr.csv
+ber_vs_snr.json
+10_ber_vs_snr_waterfall.png
+
+Expected result:
+As SNR increases, BER should decrease. This creates the waterfall curve.
+
+
+14. PLOTTING AND EYE DIAGRAMS
+
+File:
+comm_system/visualization.py
+
+Function:
+render_all_figures()
+
+Purpose:
+This function generates all plots for the assignment demo.
+
+Saved plots:
+
+01_source_sampling_quantization.png
+Shows analog signal, sampled values, and quantized values.
+
+02_bitstream_preview.png
+Shows the first part of the PCM bitstream.
+
+03_line_symbols.png
+Shows the line-coded symbol levels.
+
+04_tx_rx_waveforms.png
+Shows transmit waveform, noisy received waveform, and matched-filter output.
+
+05_eye_tx.png
+Eye diagram after pulse shaping.
+
+06_eye_rx.png
+Eye diagram after AWGN noise.
+
+07_eye_matched.png
+Eye diagram after matched filter.
+
+08_pulse_time_domain.png
+Shows the selected pulse in time domain.
+
+09_pulse_frequency_domain.png
+Compares pulse spectra.
+
+10_ber_vs_snr_waterfall.png
+Shows BER vs SNR.
+
+Eye diagram concept:
+
+An eye diagram is created by cutting the waveform into short segments and
+overlaying them. If the eye is open, detection is easier. If the eye is closed
+or noisy, bit errors are more likely.
+
+Important variables:
+
+eye_symbols
+Controls how many symbol periods each eye trace contains.
+
+eye_trace_count
+Controls how many traces are drawn.
+
+bitstream_preview_bits
+Controls how many bits are shown in the bitstream preview plot.
+
+
+15. OUTPUT FOLDER STRUCTURE
+
+The output folder is resolved in comm_system/pipeline.py.
+
+Current structure:
+
+artifacts/<run_name>/<scheme>/<pulse>/
+
+Example:
+
+artifacts/assignment_demo/polar/raised_cosine/
+artifacts/pulse_eye_sweep_smoke/polar/sinc/
+
+This prevents outputs from different runs, line codes, and pulse shapes from
+overwriting each other.
+
+Important variable:
+
+config.output.run_name
+
+This controls the run folder name.
+
+
+16. HOW TO CHANGE COMMON SETTINGS
+
+Change line code:
+
+build_my_simulation(scheme="on_off")
+build_my_simulation(scheme="polar")
+build_my_simulation(scheme="bipolar")
+
+Change pulse:
+
+build_my_simulation(pulse="nrz")
+build_my_simulation(pulse="rz")
+build_my_simulation(pulse="raised_cosine")
+build_my_simulation(pulse="sinc")
+
+Change source waveform:
+
+set_source_signal(config, waveform="sine")
+set_source_signal(config, waveform="cosine")
+set_source_signal(config, waveform="square")
+set_source_signal(config, waveform="multi_tone")
+
+Change quantizer:
+
+set_quantization(config, bits_per_sample=3)
+set_quantization(config, bits_per_sample=4)
+set_quantization(config, bits_per_sample=8)
+
+Change SNR:
+
+set_channel(config, snr_db=5.0)
+set_channel(config, snr_db=12.0)
+set_channel(config, snr_db=18.0)
+
+Change BER waterfall:
+
+set_ber_waterfall(config, enabled=True, min_bit_count=100_000)
+
+Disable BER waterfall for faster runs:
+
+set_ber_waterfall(config, enabled=False)
+
+
+17. PULSE EYE SWEEP
+
+In simulation_template.py, the project includes:
+
+run_pulse_eye_sweep()
+
+This function runs combinations of:
+
+Line codes:
+on_off
+polar
+bipolar
+
+Pulse shapes:
+nrz
+rz
+raised_cosine
+sinc
+
+To run it from simulation_template.py, set:
+
+DEMO_MODE = "pulse_sweep"
+
+Then run:
+
+python simulation_template.py
+
+This saves plots like:
+
+artifacts/assignment_demo/on_off/nrz/05_eye_tx.png
+artifacts/assignment_demo/on_off/rz/05_eye_tx.png
+artifacts/assignment_demo/polar/raised_cosine/05_eye_tx.png
+artifacts/assignment_demo/bipolar/sinc/05_eye_tx.png
+
+
+18. ASSIGNMENT REQUIREMENT CHECKLIST
+
+1. Generate a continuous-time source signal
+Satisfied by generate_analog_signal().
+
+2. Sampling and quantization block converts signal to bits
+Satisfied by sample_signal(), quantize_samples(), and build_bitstream().
+
+3. Line coding block supports polar, on-off, and bipolar
+Satisfied by encode_line().
+
+4. Pulse shaping supports rectangular/NRZ, RZ, raised cosine, and sinc
+Satisfied by build_pulse() and shape_symbols().
+
+5. AWGN channel
+Satisfied by add_awgn().
+
+6. Matched filter receiver
+Satisfied by matched_filter_receive().
+
+7. BER calculation
+Satisfied by bit_error_rate().
+
+8. BER vs SNR waterfall curve
+Satisfied by run_ber_curve().
+
+9. Sampling and quantization output
+Saved in 01_source_sampling_quantization.png and quantized_samples.csv.
+
+10. Line code output and eye diagram
+Saved in 03_line_symbols.png and 05_eye_tx.png.
+
+11. Eye diagram after RC pulse
+Use pulse="raised_cosine"; saved as 05_eye_tx.png.
+
+12. Eye diagram after noise
+Saved as 06_eye_rx.png.
+
+13. Matched filter eye diagram
+Saved as 07_eye_matched.png.
+
+14. Detected bits and BER
+Saved as recovered_bitstream.txt and metrics.json.
+
+
+19. DEMO TALKING POINTS
+
+The analog signal is generated first, then sampled at a chosen sampling rate.
+
+Each sample is quantized into one of a fixed number of levels.
+
+Each quantized level is encoded into a binary PCM word.
+
+The PCM words are flattened into a bitstream.
+
+The bitstream is converted into physical signal levels using a line code.
+
+The line-coded symbols are shaped using a selected pulse.
+
+The shaped waveform is transmitted through an AWGN channel.
+
+The receiver uses a matched filter based on the same pulse shape.
+
+The matched-filter output is sampled at symbol instants.
+
+The sampled values are thresholded to recover bits.
+
+The recovered bits are compared with transmitted bits to calculate BER.
+
+The BER curve is generated by repeating the full chain for multiple SNR
+values.
+
+
+20. IMPORTANT OBSERVATIONS
+
+Higher SNR generally gives lower BER.
+
+More quantization bits reduce quantization error but increase bitstream length.
+
+Pulse shape affects bandwidth, eye opening, ringing, and inter-symbol
+interference.
+
+Raised cosine is usually better controlled than raw sinc because rolloff and
+span can be adjusted.
+
+The matched filter improves receiver performance by maximizing the sampling
+instant response for the known transmitted pulse.
+
+Eye diagrams are useful because they visually show timing margin, noise margin,
+and inter-symbol interference.
+
+
+21. DETAILED FUNCTION AND VARIABLE TABLES
+
+This section gives function-by-function details using the same variable names
+that appear in the code.
+
+
+21.1 simulation_template.py TABLE
+
+This file is the user control file. Most assignment changes should be made
+here.
+
++-----------------------------+------------------------------+----------------------------------------+----------------------------------------------+
+| Function / Variable          | Variable Name                | Possible / Common Values               | Effect on Output                              |
++-----------------------------+------------------------------+----------------------------------------+----------------------------------------------+
+| SUPPORTED_SIGNALLING_SCHEMES | SUPPORTED_SIGNALLING_SCHEMES | ("on_off", "polar", "bipolar")        | Lists line-code types used by sweep.          |
+| SUPPORTED_PULSES             | SUPPORTED_PULSES             | ("nrz", "rz", "raised_cosine", "sinc")| Lists pulse types used by sweep.              |
+| Demo mode                    | DEMO_MODE                    | "single", "pulse_sweep"               | Runs one simulation or all pulse/scheme demos.|
+| Run folder name              | DEMO_RUN_NAME                | Any folder-safe string                 | Names the output run folder.                  |
++-----------------------------+------------------------------+----------------------------------------+----------------------------------------------+
+
+
+21.2 create_config()
+
+Location:
+simulation_template.py
+
+Purpose:
+Creates the starting SimulationConfig for one line-code scheme.
+
++---------------+---------------+-----------------------------+------------------------------------------------+
+| Parameter     | Code Variable | Possible Values             | Effect                                         |
++---------------+---------------+-----------------------------+------------------------------------------------+
+| Scheme choice | scheme        | "on_off", "polar", "bipolar"| Selects the line coding and receiver threshold.|
++---------------+---------------+-----------------------------+------------------------------------------------+
+
+Internally this calls build_config(scheme) from comm_system/config.py.
+
+
+21.3 set_source_signal()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets analog input signal variables.
+
++----------------------+---------------------------+-------------------------------+------------------------------------------------+
+| Parameter            | Code Variable             | Possible / Common Values      | Effect                                         |
++----------------------+---------------------------+-------------------------------+------------------------------------------------+
+| Config object         | config                    | SimulationConfig              | The object being modified.                     |
+| Waveform type         | waveform                  | "sine", "cosine", "square",  | Selects analog source type.                    |
+|                       |                           | "multi_tone"                  |                                                |
+| Main amplitude        | amplitude                 | Any float, commonly 0.5 to 2  | Increases/decreases signal height.             |
+| Main frequency        | frequency_hz              | Positive float                | Controls main oscillation speed.               |
+| Main phase            | phase_rad                 | Any float in radians          | Shifts main waveform in time/phase.            |
+| Second amplitude      | secondary_amplitude       | Any float                     | Adds second tone strength for multi_tone.       |
+| Second frequency      | secondary_frequency_hz    | Positive float                | Controls second tone frequency.                |
+| Second phase          | secondary_phase_rad       | Any float in radians          | Shifts second tone phase.                      |
+| DC offset             | dc_offset                 | Any float                     | Moves entire source up/down.                   |
+| Duration              | duration_s                | Positive float                | Controls signal length.                        |
+| Analog oversampling   | analog_oversample_factor  | Positive int, e.g. 20,40,100  | Controls dense analog simulation resolution.   |
++----------------------+---------------------------+-------------------------------+------------------------------------------------+
+
+Main output affected:
+analog_signal, sampled_signal, quantized_signal, bitstream.
+
+
+21.4 set_sampling()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets sampling block variables.
+
++----------------+------------------+----------------------+-----------------------------------------------+
+| Parameter      | Code Variable    | Possible Values      | Effect                                        |
++----------------+------------------+----------------------+-----------------------------------------------+
+| Config object  | config           | SimulationConfig     | The object being modified.                    |
+| Sampling rate  | sampling_rate_hz | Positive float       | More samples per second if increased.         |
+| Sample phase   | sample_phase_s   | Float, usually 0     | Shifts exact sample locations in time.        |
++----------------+------------------+----------------------+-----------------------------------------------+
+
+Too low sampling_rate_hz can give a poor sampled representation of the source.
+
+
+21.5 set_quantization()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets quantizer and PCM conversion variables.
+
++-----------------------+---------------------+------------------------------+-----------------------------------------------+
+| Parameter             | Code Variable       | Possible Values              | Effect                                        |
++-----------------------+---------------------+------------------------------+-----------------------------------------------+
+| Config object          | config              | SimulationConfig             | The object being modified.                    |
+| Bits per sample        | bits_per_sample     | int >= 1 or None             | More bits means more quantization levels.     |
+| Quantization levels    | quantization_levels | int >= 2 or None             | Directly sets number of quantizer levels.     |
+| Minimum range          | min_value           | Float                        | Lower clipping limit.                         |
+| Maximum range          | max_value           | Float > min_value            | Upper clipping limit.                         |
++-----------------------+---------------------+------------------------------+-----------------------------------------------+
+
+Use either bits_per_sample or quantization_levels.
+
+Example:
+bits_per_sample = 4 gives 16 levels.
+
+Output affected:
+quantized_signal, quantizer_indices, pcm_words, bitstream.
+
+
+21.6 set_line_coding()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets line-code voltage levels and receiver threshold defaults.
+
++----------------------------+------------------------------+-----------------------------+------------------------------------------------+
+| Parameter                  | Code Variable                | Possible Values             | Effect                                         |
++----------------------------+------------------------------+-----------------------------+------------------------------------------------+
+| Config object               | config                       | SimulationConfig            | The object being modified.                     |
+| One level                   | one_level                    | Float, often 1.0            | Signal level used for bit 1.                   |
+| Zero level                  | zero_level                   | Float or None               | Signal level used for bit 0 in on_off/polar.   |
+| Bipolar zero level          | bipolar_zero_level           | Float, often 0.0            | Signal level used for bit 0 in bipolar coding. |
+| Bipolar first mark polarity | bipolar_first_mark_positive  | True or False               | Chooses sign of first 1 in bipolar coding.     |
+| Decision threshold          | decision_threshold           | Float or None               | Receiver threshold for bit decisions.          |
++----------------------------+------------------------------+-----------------------------+------------------------------------------------+
+
+Scheme-specific behavior:
+
++----------+------------------+------------------+-----------------------------+
+| Scheme   | Bit 1 Level      | Bit 0 Level      | Default Threshold           |
++----------+------------------+------------------+-----------------------------+
+| on_off   | +one_level       | 0                | 0.5                         |
+| polar    | +one_level       | -one_level       | 0.0                         |
+| bipolar  | alternating +/-A | 0                | 0.5 with absolute detection |
++----------+------------------+------------------+-----------------------------+
+
+
+21.7 set_pulse_shaping()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets pulse-shaping variables.
+
++----------------------+--------------------+-----------------------------------+-----------------------------------------------+
+| Parameter            | Code Variable      | Possible Values                   | Effect                                        |
++----------------------+--------------------+-----------------------------------+-----------------------------------------------+
+| Config object         | config             | SimulationConfig                  | The object being modified.                    |
+| Pulse name            | pulse              | "nrz", "rectangular", "rz",      | Selects pulse shape.                          |
+|                       |                    | "raised_cosine", "rc", "sinc",   |                                               |
+|                       |                    | "half_sine"                       |                                               |
+| Samples per symbol    | samples_per_symbol | Positive int, e.g. 16,32,64       | Controls waveform resolution per bit.         |
+| Pulse amplitude       | amplitude          | Float, often 1.0                  | Scales pulse peak.                            |
+| RC rolloff            | rolloff            | Float from 0.0 to 1.0             | Controls raised cosine bandwidth/ringing.     |
+| Pulse span            | span_symbols       | int >= 1                          | Length of raised cosine/sinc pulse.           |
+| RZ duty cycle         | rz_duty_cycle      | 0.0 < value <= 1.0                | Fraction of symbol period RZ stays nonzero.   |
++----------------------+--------------------+-----------------------------------+-----------------------------------------------+
+
+Output affected:
+pulse_shape.txt, transmit waveform, eye diagrams, BER.
+
+
+21.8 set_channel()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets AWGN channel variables.
+
++----------------+----------------+-------------------------------+------------------------------------------------+
+| Parameter      | Code Variable  | Possible Values               | Effect                                         |
++----------------+----------------+-------------------------------+------------------------------------------------+
+| Config object  | config         | SimulationConfig              | The object being modified.                     |
+| Noise switch   | noise_enabled  | True or False                 | Enables/disables AWGN noise.                   |
+| SNR            | snr_db         | Float in dB, e.g. 0 to 30      | Higher SNR means less noise.                   |
+| Manual noise   | noise_std      | Float >= 0 or None            | Overrides SNR-based noise calculation.         |
+| Attenuation    | attenuation    | Float                         | Scales signal before noise is added.           |
+| DC offset      | dc_offset      | Float                         | Adds constant shift in channel.                |
+| Random seed    | random_seed    | Integer                       | Makes noise repeatable.                        |
++----------------+----------------+-------------------------------+------------------------------------------------+
+
+
+21.9 set_receiver()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets matched-filter receiver and detection variables.
+
++------------------------------+--------------------------------------+----------------+-----------------------------------------------+
+| Parameter                    | Code Variable                        | Values         | Effect                                        |
++------------------------------+--------------------------------------+----------------+-----------------------------------------------+
+| Config object                 | config                               | SimulationConfig| The object being modified.                   |
+| Sampling offset               | sample_offset                        | Integer        | Moves decision sample point.                  |
+| Normalize threshold           | normalize_threshold_to_pulse_energy  | True or False  | Scales threshold by pulse energy.             |
+| Bipolar absolute detection    | bipolar_use_absolute_value           | True or False  | Lets +/- bipolar marks both mean bit 1.       |
++------------------------------+--------------------------------------+----------------+-----------------------------------------------+
+
+
+21.10 set_output()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets output folder, plot, and text-saving variables.
+
++-------------------------+-------------------------+-----------------------------+------------------------------------------------+
+| Parameter               | Code Variable           | Possible Values             | Effect                                         |
++-------------------------+-------------------------+-----------------------------+------------------------------------------------+
+| Config object            | config                  | SimulationConfig            | The object being modified.                     |
+| Output root              | root_dir                | String or Path              | Top-level artifact folder.                     |
+| Run folder               | run_name                | String or None              | Per-run folder name.                           |
+| Save text                | save_text               | True or False               | Saves CSV/TXT/JSON outputs.                    |
+| Save plots               | save_plots              | True or False               | Saves PNG plots.                               |
+| Show plots               | show_plots              | True or False               | Opens plots interactively.                     |
+| Plot backend             | plot_backend            | "matplotlib" or "seaborn"   | Selects plot style system.                     |
+| Plot style               | plot_style              | "default", "ggplot", etc.   | Changes plot appearance.                       |
+| Figure DPI               | figure_dpi              | Positive int                | Controls saved image resolution.               |
+| Eye symbols              | eye_symbols             | Positive int                | Number of symbols per eye trace.               |
+| Eye trace count          | eye_trace_count         | Positive int                | Number of eye traces drawn.                    |
+| Bitstream preview bits   | bitstream_preview_bits  | Positive int                | Number of bits shown in preview plot.          |
++-------------------------+-------------------------+-----------------------------+------------------------------------------------+
+
+
+21.11 set_ber_waterfall()
+
+Location:
+simulation_template.py
+
+Purpose:
+Sets BER vs SNR waterfall variables.
+
++----------------------+----------------+------------------------------+------------------------------------------------+
+| Parameter            | Code Variable  | Possible Values              | Effect                                         |
++----------------------+----------------+------------------------------+------------------------------------------------+
+| Config object         | config         | SimulationConfig             | The object being modified.                     |
+| Enable curve          | enabled        | True or False                | Turns BER curve generation on/off.             |
+| SNR values            | snr_db_values  | List of floats               | SNR points used in waterfall curve.            |
+| Minimum bit count     | min_bit_count  | Integer, e.g. 100000         | More bits gives more accurate BER.             |
+| Random seed           | random_seed    | Integer                      | Reproducible BER random bits.                  |
+| Bit source            | bit_source     | "random", "pcm_repeated"     | Selects BER test bit sequence.                 |
++----------------------+----------------+------------------------------+------------------------------------------------+
+
+
+21.12 build_my_simulation()
+
+Location:
+simulation_template.py
+
+Purpose:
+Builds one complete SimulationConfig by calling all set_* helper functions.
+
++----------------+---------------+----------------------------------+-----------------------------------------------+
+| Parameter      | Code Variable | Possible Values                  | Effect                                        |
++----------------+---------------+----------------------------------+-----------------------------------------------+
+| Scheme          | scheme        | "on_off", "polar", "bipolar"     | Chooses line coding.                          |
+| Pulse           | pulse         | "nrz", "rz", "raised_cosine",    | Chooses pulse shaping.                        |
+|                 |               | "sinc"                           |                                               |
+| Run folder      | run_name      | String or None                   | Names output folder.                          |
++----------------+---------------+----------------------------------+-----------------------------------------------+
+
+
+21.13 run_pulse_eye_sweep()
+
+Location:
+simulation_template.py
+
+Purpose:
+Runs many line-code and pulse-shape combinations automatically.
+
++-----------------------+----------------------+--------------------------------+-----------------------------------------------+
+| Parameter             | Code Variable        | Possible Values                | Effect                                        |
++-----------------------+----------------------+--------------------------------+-----------------------------------------------+
+| Run folder             | run_name             | String                         | Names output folder.                          |
+| Schemes list           | schemes              | Tuple of scheme strings        | Selects which line codes to run.              |
+| Pulses list            | pulses               | Tuple of pulse strings         | Selects which pulses to run.                  |
+| BER sweep switch       | enable_ber_waterfall | True or False                  | Adds BER curve for each combination if True.  |
++-----------------------+----------------------+--------------------------------+-----------------------------------------------+
+
+Default behavior:
+Runs on_off, polar, and bipolar with nrz, rz, raised_cosine, and sinc.
+
+
+22. DETAILED COMM_SYSTEM FUNCTION TABLES
+
+
+22.1 comm_system/config.py
+
+Function:
+build_config(scheme)
+
+Purpose:
+Creates the default SimulationConfig and sets scheme-specific defaults.
+
++---------------+---------------+-----------------------------+------------------------------------------------+
+| Parameter     | Code Variable | Possible Values             | Effect                                         |
++---------------+---------------+-----------------------------+------------------------------------------------+
+| Line scheme   | scheme        | "on_off", "polar", "bipolar"| Sets line_code.scheme and receiver threshold.  |
++---------------+---------------+-----------------------------+------------------------------------------------+
+
+Default values created by build_config:
+
++----------+-----------+------------+-----------------------------+
+| Scheme   | one_level | zero_level | decision_threshold          |
++----------+-----------+------------+-----------------------------+
+| on_off   | 1.0       | 0.0        | 0.5                         |
+| polar    | 1.0       | -1.0       | 0.0                         |
+| bipolar  | 1.0       | 0.0        | 0.5                         |
++----------+-----------+------------+-----------------------------+
+
+
+22.2 comm_system/source.py: generate_analog_signal()
+
++-----------------------------+--------------------------------+-------------------------------+-----------------------------------------------+
+| Code Variable               | Source                         | Possible Values               | Effect                                        |
++-----------------------------+--------------------------------+-------------------------------+-----------------------------------------------+
+| config                      | Function parameter             | SourceConfig                  | Holds all source settings.                    |
+| analog_sample_rate_hz       | Resolved inside function       | Positive float                | Internal dense simulation sample rate.        |
+| dt                          | 1 / analog_sample_rate_hz      | Positive float                | Time step for dense analog signal.            |
+| time                        | np.arange(...)                 | NumPy array                   | Time values for source signal.                |
+| signal                      | Computed from waveform         | NumPy array                   | Generated analog signal values.               |
+| config.waveform             | SourceConfig                   | sine/cosine/square/multi_tone | Selects formula used for signal.              |
+| config.amplitude            | SourceConfig                   | Float                         | Main signal amplitude.                        |
+| config.frequency_hz         | SourceConfig                   | Float                         | Main signal frequency.                        |
+| config.phase_rad            | SourceConfig                   | Float                         | Main signal phase.                            |
+| config.secondary_amplitude  | SourceConfig                   | Float                         | Second tone amplitude.                        |
+| config.secondary_frequency_hz| SourceConfig                  | Float                         | Second tone frequency.                        |
+| config.secondary_phase_rad  | SourceConfig                   | Float                         | Second tone phase.                            |
+| config.dc_offset            | SourceConfig                   | Float                         | Adds DC shift.                                |
++-----------------------------+--------------------------------+-------------------------------+-----------------------------------------------+
+
+
+22.3 comm_system/source.py: sample_signal()
+
++----------------------------+------------------------------+----------------------+------------------------------------------------+
+| Code Variable              | Source                       | Possible Values      | Effect                                         |
++----------------------------+------------------------------+----------------------+------------------------------------------------+
+| analog_time                | Function parameter           | NumPy array          | Time axis of dense source signal.              |
+| analog_signal              | Function parameter           | NumPy array          | Source signal values.                          |
+| config                     | Function parameter           | SamplingConfig       | Holds sampling settings.                       |
+| sample_period              | 1 / sampling_rate_hz         | Positive float       | Time between samples.                          |
+| sample_time                | np.arange(...)               | NumPy array          | Sampling instants.                             |
+| sampled                    | np.interp(...)               | NumPy array          | Sampled signal values.                         |
+| config.sampling_rate_hz    | SamplingConfig               | Positive float       | Controls number of samples per second.         |
+| config.sample_phase_s      | SamplingConfig               | Float                | Offsets sample instants.                       |
++----------------------------+------------------------------+----------------------+------------------------------------------------+
+
+
+22.4 comm_system/source.py: _resolve_analog_sample_rate()
+
++-------------------------------+-------------------------------+----------------------+-----------------------------------------------+
+| Code Variable                 | Source                        | Possible Values      | Effect                                        |
++-------------------------------+-------------------------------+----------------------+-----------------------------------------------+
+| config                        | Function parameter            | SourceConfig         | Holds source settings.                        |
+| config.analog_sample_rate_hz  | SourceConfig                  | Float or None        | If set, directly uses analog sample rate.     |
+| dominant_frequency            | max(...)                      | Positive float       | Largest frequency used for auto sample rate.  |
+| sample_rate                   | dominant_frequency * factor   | Positive float       | Auto dense source sample rate.                |
+| config.analog_oversample_factor| SourceConfig                 | Positive int         | Multiplies dominant frequency.                |
++-------------------------------+-------------------------------+----------------------+-----------------------------------------------+
+
+
+22.5 comm_system/pcm.py: resolve_quantizer_settings()
+
++----------------------------+------------------------------+----------------------+-----------------------------------------------+
+| Code Variable              | Source                       | Possible Values      | Effect                                        |
++----------------------------+------------------------------+----------------------+-----------------------------------------------+
+| config                     | Function parameter           | QuantizerConfig      | Holds quantizer settings.                     |
+| config.quantization_levels | QuantizerConfig              | int >= 2 or None     | Direct number of levels if given.             |
+| config.bits_per_sample     | QuantizerConfig              | int >= 1 or None     | Used to calculate levels if levels is None.   |
+| levels                     | Computed                     | int >= 2             | Number of quantization levels.                |
+| bits_per_sample            | Computed                     | int >= 1             | Bits used per PCM word.                       |
+| config.min_value           | QuantizerConfig              | Float                | Lower quantizer input range.                  |
+| config.max_value           | QuantizerConfig              | Float > min_value    | Upper quantizer input range.                  |
++----------------------------+------------------------------+----------------------+-----------------------------------------------+
+
+
+22.6 comm_system/pcm.py: quantize_samples()
+
++------------------+-------------------------+--------------------+------------------------------------------------+
+| Code Variable    | Source                  | Possible Values    | Effect                                         |
++------------------+-------------------------+--------------------+------------------------------------------------+
+| samples          | Function parameter      | NumPy array        | Input sampled signal.                          |
+| config           | Function parameter      | QuantizerConfig    | Holds quantizer settings.                      |
+| levels           | resolve_quantizer_settings | int >= 2          | Number of quantization levels.                 |
+| bits_per_sample  | resolve_quantizer_settings | int >= 1          | Width of PCM binary word.                      |
+| clipped          | np.clip(...)            | NumPy array        | Samples limited to quantizer range.            |
+| step             | Computed                | Positive float     | Distance between quantizer levels.             |
+| indices          | np.rint(...)            | Integer array      | Quantization index for each sample.            |
+| quantized        | min_value + indices*step| NumPy array        | Quantized sample values.                       |
++------------------+-------------------------+--------------------+------------------------------------------------+
+
+
+22.7 comm_system/pcm.py: _build_codebook()
+
++-----------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable   | Source             | Possible Values    | Effect                                         |
++-----------------+--------------------+--------------------+------------------------------------------------+
+| indices         | Function parameter | Integer array      | Quantizer indices.                             |
+| bits_per_sample | Function parameter | int >= 1           | Width of each binary word.                     |
+| np.binary_repr  | NumPy/helper use   | Binary string      | Converts each index to fixed-width binary.     |
++-----------------+--------------------+--------------------+------------------------------------------------+
+
+
+22.8 comm_system/pcm.py: build_bitstream()
+
++---------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable | Source             | Possible Values    | Effect                                         |
++---------------+--------------------+--------------------+------------------------------------------------+
+| words         | Function parameter | 2D PCM word array  | PCM words from quantizer.                      |
+| bitstream     | words.reshape(-1)  | 1D bit array       | Final serial bitstream.                        |
++---------------+--------------------+--------------------+------------------------------------------------+
+
+
+22.9 comm_system/line_coding.py: encode_line()
+
++-------------------------------+--------------------+-----------------------------+------------------------------------------------+
+| Code Variable                 | Source             | Possible Values             | Effect                                         |
++-------------------------------+--------------------+-----------------------------+------------------------------------------------+
+| bits                          | Function parameter | Array of 0 and 1            | Input bitstream.                               |
+| config                        | Function parameter | LineCodeConfig              | Holds line-code settings.                      |
+| scheme                        | config.scheme      | on_off/polar/bipolar        | Chooses line-code rule.                        |
+| config.one_level              | LineCodeConfig     | Float                       | Level used for bit 1.                          |
+| config.zero_level             | LineCodeConfig     | Float                       | Level used for bit 0 in on_off/polar.          |
+| config.bipolar_zero_level     | LineCodeConfig     | Float                       | Level used for bit 0 in bipolar.               |
+| polarity                      | Internal variable  | +1.0 or -1.0                | Alternates sign of bipolar marks.              |
+| config.bipolar_first_mark_positive | LineCodeConfig| True or False               | Starts bipolar polarity positive or negative.  |
+| levels                        | Internal output    | Float array                 | Line-coded symbols.                            |
++-------------------------------+--------------------+-----------------------------+------------------------------------------------+
+
+
+22.10 comm_system/pulse_shaping.py: build_pulse()
+
++------------------------------+--------------------+-------------------------------+-----------------------------------------------+
+| Code Variable                | Source             | Possible Values               | Effect                                        |
++------------------------------+--------------------+-------------------------------+-----------------------------------------------+
+| config                       | Function parameter | PulseShapeConfig              | Holds pulse settings.                         |
+| pulse_name                   | config.pulse.lower | nrz/rectangular/rz/half_sine/ | Selects pulse generation branch.              |
+|                              |                    | raised_cosine/rc/sinc         |                                               |
+| config.samples_per_symbol    | PulseShapeConfig   | Positive int                  | Length/resolution of pulse.                   |
+| config.amplitude             | PulseShapeConfig   | Float                         | Pulse amplitude.                              |
+| config.rolloff               | PulseShapeConfig   | 0.0 to 1.0                    | Raised cosine rolloff.                        |
+| config.span_symbols          | PulseShapeConfig   | int >= 1                      | RC/sinc pulse length in symbols.              |
+| config.rz_duty_cycle         | PulseShapeConfig   | 0.0 < value <= 1.0            | RZ active fraction.                           |
++------------------------------+--------------------+-------------------------------+-----------------------------------------------+
+
+
+22.11 comm_system/pulse_shaping.py: shape_symbols()
+
++--------------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable      | Source             | Possible Values    | Effect                                         |
++--------------------+--------------------+--------------------+------------------------------------------------+
+| symbols            | Function parameter | Float array        | Line-coded symbol values.                      |
+| pulse              | Function parameter | Float array        | Selected pulse shape.                          |
+| samples_per_symbol | Function parameter | Positive int       | Symbol spacing in samples.                     |
+| upsampled          | Internal array     | Float array        | Symbols inserted every samples_per_symbol.     |
+| waveform           | np.convolve(...)   | Float array        | Final pulse-shaped transmit waveform.          |
++--------------------+--------------------+--------------------+------------------------------------------------+
+
+
+22.12 comm_system/pulse_shaping.py: _build_raised_cosine()
+
++-------------------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable           | Source             | Possible Values    | Effect                                         |
++-------------------------+--------------------+--------------------+------------------------------------------------+
+| config                  | Function parameter | PulseShapeConfig   | Holds RC settings.                             |
+| sps                     | samples_per_symbol | Positive int       | Samples per symbol.                            |
+| span                    | span_symbols       | int >= 1           | Pulse length in symbols.                       |
+| rolloff                 | config.rolloff     | 0.0 to 1.0         | Controls bandwidth and ringing.                |
+| time                    | np.arange(...)     | Float array        | Pulse time axis in symbol periods.             |
+| pulse                   | Internal array     | Float array        | Raised cosine pulse samples.                   |
++-------------------------+--------------------+--------------------+------------------------------------------------+
+
+
+22.13 comm_system/pulse_shaping.py: _build_sinc()
+
++-------------------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable           | Source             | Possible Values    | Effect                                         |
++-------------------------+--------------------+--------------------+------------------------------------------------+
+| config                  | Function parameter | PulseShapeConfig   | Holds sinc settings.                           |
+| sps                     | samples_per_symbol | Positive int       | Samples per symbol.                            |
+| span                    | span_symbols       | int >= 1           | Truncated sinc length in symbols.              |
+| time                    | np.arange(...)     | Float array        | Sinc time axis.                                |
+| pulse                   | np.sinc(time)      | Float array        | Sinc pulse samples.                            |
++-------------------------+--------------------+--------------------+------------------------------------------------+
+
+
+22.14 comm_system/pulse_shaping.py: _build_rz()
+
++-------------------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable           | Source             | Possible Values    | Effect                                         |
++-------------------------+--------------------+--------------------+------------------------------------------------+
+| config                  | Function parameter | PulseShapeConfig   | Holds RZ settings.                             |
+| pulse                   | Internal array     | Float array        | Starts with zeros, active section filled.      |
+| active_samples          | Computed int       | 1 to samples/symbol| Number of nonzero samples in each RZ pulse.    |
+| config.rz_duty_cycle    | PulseShapeConfig   | 0.0 < value <= 1.0 | Controls active_samples.                       |
+| config.amplitude        | PulseShapeConfig   | Float              | Active pulse level.                            |
++-------------------------+--------------------+--------------------+------------------------------------------------+
+
+
+22.15 comm_system/pulse_shaping.py: _normalize_pulse()
+
++----------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable  | Source             | Possible Values    | Effect                                         |
++----------------+--------------------+--------------------+------------------------------------------------+
+| pulse          | Function parameter | Float array        | Unnormalized pulse.                            |
+| amplitude      | Function parameter | Float              | Desired peak amplitude.                        |
+| peak           | max(abs(pulse))    | Positive float     | Used to scale pulse.                           |
++----------------+--------------------+--------------------+------------------------------------------------+
+
+
+22.16 comm_system/channel.py: add_awgn()
+
++-------------------------+------------------------+-----------------------+-----------------------------------------------+
+| Code Variable           | Source                 | Possible Values       | Effect                                        |
++-------------------------+------------------------+-----------------------+-----------------------------------------------+
+| signal                  | Function parameter     | Float array           | Transmit waveform.                            |
+| config                  | Function parameter     | ChannelConfig         | Holds channel settings.                       |
+| channel_signal          | attenuation*signal+dc  | Float array           | Signal after channel scaling/offset.          |
+| generator               | np.random.default_rng  | Random generator      | Creates reproducible noise.                   |
+| config.noise_enabled    | ChannelConfig          | True or False         | Enables/disables noise.                       |
+| config.noise_std        | ChannelConfig          | Float or None         | Manual noise standard deviation.              |
+| signal_power            | mean(channel_signal^2) | Nonnegative float     | Average signal power.                         |
+| snr_linear              | 10^(snr_db/10)         | Positive float        | Linear SNR.                                   |
+| noise_power             | signal_power/snr_linear| Nonnegative float     | Noise variance.                               |
+| noise_std               | sqrt(noise_power)      | Nonnegative float     | Noise standard deviation.                     |
+| noise                   | generator.normal(...)  | Float array           | AWGN samples.                                 |
++-------------------------+------------------------+-----------------------+-----------------------------------------------+
+
+
+22.17 comm_system/receiver.py: matched_filter_receive()
+
++----------------------------+------------------------------+----------------------+-----------------------------------------------+
+| Code Variable              | Source                       | Possible Values      | Effect                                        |
++----------------------------+------------------------------+----------------------+-----------------------------------------------+
+| received_waveform          | Function parameter           | Float array          | Noisy received waveform.                      |
+| pulse                      | Function parameter           | Float array          | Transmit pulse shape.                         |
+| pulse_config               | Function parameter           | PulseShapeConfig     | Holds samples_per_symbol.                     |
+| receiver_config            | Function parameter           | ReceiverConfig       | Holds receiver settings.                      |
+| matched                    | convolve(rx, pulse[::-1])    | Float array          | Matched-filter output.                        |
+| base_index                 | len(pulse)-1                 | Integer              | First symbol peak index.                      |
+| decision_index             | base_index + sample_offset   | Integer              | First receiver sampling index.                |
+| sample_points              | decision_index + n*sps       | Integer array        | All symbol decision sample locations.         |
+| samples                    | matched[sample_points]       | Float array          | Samples used for bit decisions.               |
++----------------------------+------------------------------+----------------------+-----------------------------------------------+
+
+
+22.18 comm_system/receiver.py: decide_bits()
+
++------------------------------------------+--------------------+--------------------------+--------------------------------------------+
+| Code Variable                            | Source             | Possible Values          | Effect                                     |
++------------------------------------------+--------------------+--------------------------+--------------------------------------------+
+| symbol_samples                           | Function parameter | Float array              | Matched-filter decision samples.           |
+| line_config                              | Function parameter | LineCodeConfig           | Holds line-code scheme.                    |
+| receiver_config                          | Function parameter | ReceiverConfig           | Holds receiver decision settings.          |
+| pulse_energy                             | Function parameter | Positive float           | Sum of pulse squared.                      |
+| scheme                                   | line_config.scheme | on_off/polar/bipolar     | Selects decision rule.                     |
+| threshold_scale                          | pulse_energy or 1  | Positive float           | Optional threshold scaling.                |
+| receiver_config.decision_threshold       | ReceiverConfig     | Float                    | Base bit-decision threshold.               |
+| receiver_config.bipolar_use_absolute_value| ReceiverConfig    | True or False            | Uses abs(sample) for bipolar detection.    |
++------------------------------------------+--------------------+--------------------------+--------------------------------------------+
+
+
+22.19 comm_system/receiver.py: bit_error_rate()
+
++----------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable  | Source             | Possible Values    | Effect                                         |
++----------------+--------------------+--------------------+------------------------------------------------+
+| reference_bits | Function parameter | 0/1 array          | Original transmitted bits.                     |
+| recovered_bits | Function parameter | 0/1 array          | Receiver detected bits.                        |
+| limit          | min(lengths)       | Integer            | Number of bits compared.                       |
++----------------+--------------------+--------------------+------------------------------------------------+
+
+BER output:
+mean(reference_bits[:limit] != recovered_bits[:limit])
+
+
+22.20 comm_system/pipeline.py: run_simulation()
+
++--------------------+-----------------------------+----------------------+-----------------------------------------------+
+| Code Variable      | Source                      | Possible Values      | Effect                                        |
++--------------------+-----------------------------+----------------------+-----------------------------------------------+
+| config             | Function parameter          | SimulationConfig     | Full simulation settings.                     |
+| output_dir         | _resolve_output_dir(config) | Path                 | Where artifacts are saved.                    |
+| quantizer_levels   | resolve_quantizer_settings  | int >= 2             | Quantizer levels used.                        |
+| quantizer_bits     | resolve_quantizer_settings  | int >= 1             | Bits per PCM sample.                          |
+| analog_time        | generate_analog_signal      | NumPy array          | Source time axis.                             |
+| analog_signal      | generate_analog_signal      | NumPy array          | Source signal.                                |
+| sample_time        | sample_signal               | NumPy array          | Sampling instants.                            |
+| sampled_signal     | sample_signal               | NumPy array          | Sampled source values.                        |
+| quantized_signal   | quantize_samples            | NumPy array          | Quantized values.                             |
+| quantizer_indices  | quantize_samples            | Integer array        | Quantization indices.                         |
+| pcm_words          | quantize_samples            | 2D array             | PCM words.                                    |
+| bitstream          | build_bitstream             | 0/1 array            | Serialized bits.                              |
+| line_symbols       | encode_line                 | Float array          | Line-coded symbols.                           |
+| pulse              | build_pulse                 | Float array          | Pulse shape.                                  |
+| transmit_waveform  | shape_symbols               | Float array          | Pulse-shaped TX waveform.                     |
+| received_waveform  | add_awgn                    | Float array          | RX waveform after channel.                    |
+| noise              | add_awgn                    | Float array          | AWGN samples.                                 |
+| matched_waveform   | matched_filter_receive      | Float array          | Matched-filter output.                        |
+| symbol_samples     | matched_filter_receive      | Float array          | Decision samples.                             |
+| recovered_bits     | decide_bits                 | 0/1 array            | Detected bits.                                |
+| ber                | bit_error_rate              | Float from 0 to 1    | Final bit error rate.                         |
+| metrics            | Dictionary                  | Key-value data       | Summary saved/printed.                        |
++--------------------+-----------------------------+----------------------+-----------------------------------------------+
+
+
+22.21 comm_system/pipeline.py: run_ber_curve()
+
++--------------------+-----------------------------+----------------------+-----------------------------------------------+
+| Code Variable      | Source                      | Possible Values      | Effect                                        |
++--------------------+-----------------------------+----------------------+-----------------------------------------------+
+| config             | Function parameter          | SimulationConfig     | Full simulation settings.                     |
+| base_bitstream     | Function parameter          | 0/1 array or None    | Optional PCM bitstream.                       |
+| output_dir         | _resolve_output_dir         | Path                 | Where BER outputs are saved.                  |
+| bitstream          | _resolve_ber_curve_bits     | 0/1 array            | BER test bits.                                |
+| pulse              | build_pulse                 | Float array          | Pulse used for every SNR point.               |
+| rows               | Internal list               | CSV rows             | Data saved to ber_vs_snr.csv.                 |
+| snr_values         | config.ber_curve.snr_db_values | Float array       | SNR points.                                   |
+| ber_values         | Internal array              | Float array          | BER at each SNR.                              |
+| error_counts       | Internal array              | Integer array        | Bit errors at each SNR.                       |
+| index              | Loop variable               | Integer              | Current SNR index.                            |
+| snr_db             | Loop variable               | Float                | Current SNR point.                            |
+| channel_config     | _channel_for_ber_point      | ChannelConfig        | Channel config for current SNR.               |
+| limit              | min(bit lengths)            | Integer              | Number of bits compared.                      |
+| bit_errors         | count_nonzero(...)          | Integer              | Error count for current SNR.                  |
+| ber                | bit_errors / limit          | Float                | BER for current SNR.                          |
++--------------------+-----------------------------+----------------------+-----------------------------------------------+
+
+
+22.22 comm_system/pipeline.py: _resolve_ber_curve_bits()
+
++--------------------+-----------------------------+------------------------+----------------------------------------------+
+| Code Variable      | Source                      | Possible Values        | Effect                                       |
++--------------------+-----------------------------+------------------------+----------------------------------------------+
+| config             | Function parameter          | SimulationConfig       | Holds BER settings.                          |
+| base_bitstream     | Function parameter          | 0/1 array or None      | Existing PCM bitstream.                      |
+| bit_source         | config.ber_curve.bit_source | "random", "pcm_repeated"| Selects BER bit generation mode.            |
+| generator          | np.random.default_rng       | Random generator       | Creates random bits.                         |
+| repeat_count       | Computed                    | Integer                | Number of repeats for PCM bitstream.         |
+| tiled              | np.tile(...)                | 0/1 array              | Repeated PCM bitstream.                      |
++--------------------+-----------------------------+------------------------+----------------------------------------------+
+
+
+22.23 comm_system/pipeline.py: _channel_for_ber_point()
+
++----------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable  | Source             | Possible Values    | Effect                                         |
++----------------+--------------------+--------------------+------------------------------------------------+
+| base_config    | Function parameter | ChannelConfig      | Original channel settings.                     |
+| snr_db         | Function parameter | Float              | Current BER sweep SNR.                         |
+| random_seed    | Function parameter | Integer            | Unique seed for current SNR point.             |
++----------------+--------------------+--------------------+------------------------------------------------+
+
+This function always creates a noise-enabled channel with noise_std=None so
+that SNR controls the noise power for the BER curve.
+
+
+22.24 comm_system/pipeline.py: _resolve_output_dir()
+
++---------------------+------------------------+----------------------+-----------------------------------------------+
+| Code Variable       | Source                 | Possible Values      | Effect                                        |
++---------------------+------------------------+----------------------+-----------------------------------------------+
+| config              | Function parameter     | SimulationConfig     | Holds output, scheme, and pulse settings.     |
+| config.output.run_name | OutputConfig        | String or None       | Run folder name.                              |
+| timestamp           | datetime.now()         | String               | Auto run name if run_name is None.            |
+| run_name            | _safe_path_part(...)   | Folder-safe string   | Cleaned run folder name.                      |
+| scheme              | _safe_path_part(...)   | Folder-safe string   | Cleaned line-code folder name.                |
+| pulse               | _safe_path_part(...)   | Folder-safe string   | Cleaned pulse folder name.                    |
++---------------------+------------------------+----------------------+-----------------------------------------------+
+
+Final output path:
+config.output.root_dir / run_name / scheme / pulse
+
+
+22.25 comm_system/visualization.py: render_all_figures()
+
++--------------------+--------------------+----------------------+-----------------------------------------------+
+| Code Variable      | Source             | Possible Values      | Effect                                        |
++--------------------+--------------------+----------------------+-----------------------------------------------+
+| output_dir         | Function parameter | Path                 | Folder where plots are saved.                 |
+| output_config      | Function parameter | OutputConfig         | Plot and save settings.                       |
+| analog_time        | Function parameter | NumPy array          | Used for source plot.                         |
+| analog_signal      | Function parameter | NumPy array          | Used for source plot.                         |
+| sample_time        | Function parameter | NumPy array          | Used for sampling plot.                       |
+| sampled_signal     | Function parameter | NumPy array          | Used for sampling plot.                       |
+| quantized_signal   | Function parameter | NumPy array          | Used for quantization plot.                   |
+| bitstream          | Function parameter | 0/1 array            | Used for bitstream preview.                   |
+| line_symbols       | Function parameter | Float array          | Used for line-symbol plot.                    |
+| transmit_waveform  | Function parameter | Float array          | Used for TX waveform and TX eye.              |
+| received_waveform  | Function parameter | Float array          | Used for RX waveform and RX eye.              |
+| matched_waveform   | Function parameter | Float array          | Used for matched output and matched eye.      |
+| pulse_config       | Function parameter | PulseShapeConfig     | Used for eye span and pulse plots.            |
+| figures            | Internal list      | Plot list            | All figures to save/show.                     |
++--------------------+--------------------+----------------------+-----------------------------------------------+
+
+
+22.26 comm_system/visualization.py: _plot_eye_diagram()
+
++--------------------+--------------------+----------------------+-----------------------------------------------+
+| Code Variable      | Source             | Possible Values      | Effect                                        |
++--------------------+--------------------+----------------------+-----------------------------------------------+
+| waveform           | Function parameter | Float array          | Signal used to draw eye diagram.              |
+| pulse_config       | Function parameter | PulseShapeConfig     | Provides samples_per_symbol.                  |
+| output_config      | Function parameter | OutputConfig         | Provides eye_symbols and eye_trace_count.     |
+| title              | Function parameter | String               | Plot title.                                   |
+| span               | sps * eye_symbols  | Positive int         | Number of samples per eye trace.              |
+| traces             | _eye_segments(...) | List of arrays       | Waveform slices overlaid in eye plot.         |
++--------------------+--------------------+----------------------+-----------------------------------------------+
+
+
+22.27 comm_system/visualization.py: _eye_segments()
+
++----------------+--------------------+--------------------+------------------------------------------------+
+| Code Variable  | Source             | Possible Values    | Effect                                         |
++----------------+--------------------+--------------------+------------------------------------------------+
+| waveform       | Function parameter | Float array        | Signal to slice.                               |
+| span           | Function parameter | Positive int       | Length of one eye trace.                       |
+| max_traces     | Function parameter | Positive int       | Maximum number of traces.                      |
+| step           | max(1, span//2)    | Positive int       | Start spacing between eye traces.              |
+| start          | Loop variable      | Integer            | Start index of each trace.                     |
+| segments       | Internal list      | List of arrays     | Final eye diagram traces.                      |
++----------------+--------------------+--------------------+------------------------------------------------+
+
+
+23. COMPLETE CONFIG VARIABLE TABLE
+
+This table lists the main dataclass variables and valid/common values.
+
+
+23.1 SourceConfig
+
++----------------------------+-------------------------------+-----------------------------------------------+
+| Variable                   | Possible / Default Values     | Meaning                                       |
++----------------------------+-------------------------------+-----------------------------------------------+
+| waveform                   | "multi_tone" default          | Source waveform type.                         |
+| amplitude                  | 1.0 default                   | Main source amplitude.                        |
+| frequency_hz               | 5.0 default                   | Main source frequency.                        |
+| phase_rad                  | 0.0 default                   | Main source phase.                            |
+| secondary_amplitude        | 0.35 default                  | Second tone amplitude.                        |
+| secondary_frequency_hz     | 13.0 default                  | Second tone frequency.                        |
+| secondary_phase_rad        | 0.0 default                   | Second tone phase.                            |
+| dc_offset                  | 0.0 default                   | Source DC shift.                              |
+| duration_s                 | 1.0 default                   | Source duration.                              |
+| analog_sample_rate_hz      | None or positive float        | Manual dense analog sample rate.              |
+| analog_oversample_factor   | 40 default                    | Auto dense analog sample rate factor.         |
++----------------------------+-------------------------------+-----------------------------------------------+
+
+
+23.2 SamplingConfig
+
++------------------+-------------------------------+-----------------------------------------------+
+| Variable         | Possible / Default Values     | Meaning                                       |
++------------------+-------------------------------+-----------------------------------------------+
+| sampling_rate_hz | 80.0 default, positive float  | Samples per second.                           |
+| sample_phase_s   | 0.0 default                   | Sampling time offset.                         |
++------------------+-------------------------------+-----------------------------------------------+
+
+
+23.3 QuantizerConfig
+
++---------------------+-------------------------------+-----------------------------------------------+
+| Variable            | Possible / Default Values     | Meaning                                       |
++---------------------+-------------------------------+-----------------------------------------------+
+| bits_per_sample     | 4 default, int >= 1, or None  | Bits per PCM word.                            |
+| quantization_levels | None default or int >= 2      | Direct number of quantizer levels.            |
+| min_value           | -1.5 default                  | Lower input range.                            |
+| max_value           | 1.5 default                   | Upper input range.                            |
++---------------------+-------------------------------+-----------------------------------------------+
+
+
+23.4 LineCodeConfig
+
++------------------------------+-------------------------------+-----------------------------------------------+
+| Variable                     | Possible / Default Values     | Meaning                                       |
++------------------------------+-------------------------------+-----------------------------------------------+
+| scheme                       | "polar" default               | Line-code type.                               |
+| one_level                    | 1.0 default                   | Level used for bit 1.                         |
+| zero_level                   | Depends on scheme             | Level used for bit 0.                         |
+| bipolar_zero_level           | 0.0 default                   | Bipolar zero level.                           |
+| bipolar_first_mark_positive  | True default                  | First bipolar mark sign.                      |
++------------------------------+-------------------------------+-----------------------------------------------+
+
+
+23.5 PulseShapeConfig
+
++--------------------+-------------------------------+-----------------------------------------------+
+| Variable           | Possible / Default Values     | Meaning                                       |
++--------------------+-------------------------------+-----------------------------------------------+
+| pulse              | "nrz" default                 | Pulse shape name.                             |
+| samples_per_symbol | 32 default                    | Waveform samples per symbol.                  |
+| amplitude          | 1.0 default                   | Pulse amplitude.                              |
+| rolloff            | 0.35 default, 0.0 to 1.0      | Raised cosine rolloff.                        |
+| span_symbols       | 6 default, int >= 1           | RC/sinc span length.                          |
+| rz_duty_cycle      | 0.5 default, 0.0 < x <= 1.0   | Active fraction of RZ pulse.                  |
++--------------------+-------------------------------+-----------------------------------------------+
+
+
+23.6 ChannelConfig
+
++---------------+-------------------------------+-----------------------------------------------+
+| Variable      | Possible / Default Values     | Meaning                                       |
++---------------+-------------------------------+-----------------------------------------------+
+| noise_enabled | True default                  | Enables AWGN.                                 |
+| snr_db        | 18.0 default                  | Signal-to-noise ratio in dB.                  |
+| noise_std     | None default or float >= 0    | Manual noise standard deviation.              |
+| attenuation   | 1.0 default                   | Channel gain.                                 |
+| dc_offset     | 0.0 default                   | Channel DC offset.                            |
+| random_seed   | 7 default                     | Reproducible noise seed.                      |
++---------------+-------------------------------+-----------------------------------------------+
+
+
+23.7 ReceiverConfig
+
++--------------------------------------+-------------------------------+-----------------------------------------------+
+| Variable                             | Possible / Default Values     | Meaning                                       |
++--------------------------------------+-------------------------------+-----------------------------------------------+
+| decision_threshold                   | Depends on scheme             | Base receiver threshold.                      |
+| sample_offset                        | 0 default                     | Timing offset for symbol decisions.           |
+| normalize_threshold_to_pulse_energy  | True default                  | Scales threshold by pulse energy.             |
+| bipolar_use_absolute_value           | True default                  | Uses abs(sample) for bipolar detection.       |
++--------------------------------------+-------------------------------+-----------------------------------------------+
+
+
+23.8 OutputConfig
+
++------------------------+-------------------------------+-----------------------------------------------+
+| Variable               | Possible / Default Values     | Meaning                                       |
++------------------------+-------------------------------+-----------------------------------------------+
+| root_dir               | "artifacts" default           | Top output folder.                            |
+| run_name               | None or string                | Run-specific folder name.                     |
+| save_plots             | False default                 | Saves PNG plots if True.                      |
+| save_text              | True default                  | Saves TXT/CSV/JSON files if True.             |
+| show_plots             | True default                  | Shows plots interactively if True.            |
+| plot_backend           | "matplotlib" default          | Plot styling backend.                         |
+| plot_style             | "default" default             | Matplotlib/seaborn style.                     |
+| seaborn_context        | "notebook" default            | Seaborn plot context.                         |
+| seaborn_palette        | "deep" default                | Seaborn color palette.                        |
+| figure_dpi             | 160 default                   | Saved plot resolution.                        |
+| eye_symbols            | 2 default                     | Number of symbols per eye trace.              |
+| eye_trace_count        | 120 default                   | Number of eye traces.                         |
+| bitstream_preview_bits | 128 default                   | Number of preview bits plotted.               |
+| close_after_show       | False default                 | Closes figures after display/save.            |
++------------------------+-------------------------------+-----------------------------------------------+
+
+
+23.9 BerCurveConfig
+
++---------------+--------------------------------+-----------------------------------------------+
+| Variable      | Possible / Default Values      | Meaning                                       |
++---------------+--------------------------------+-----------------------------------------------+
+| enabled       | False default                  | Enables BER waterfall.                        |
+| snr_db_values | [-8,-6,-4,-2,0,2,4,6,8,10,12] | SNR points for curve.                         |
+| min_bit_count | 100000 default                 | Number of bits per SNR point.                 |
+| random_seed   | 99 default                     | Random bits seed.                             |
+| bit_source    | "random" default               | "random" or "pcm_repeated".                   |
++---------------+--------------------------------+-----------------------------------------------+

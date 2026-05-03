@@ -8,6 +8,14 @@ from comm_system.config import SimulationConfig, build_config
 from comm_system.pipeline import run_simulation
 
 
+SUPPORTED_SIGNALLING_SCHEMES = ("on_off", "polar", "bipolar")
+SUPPORTED_PULSES = ("nrz", "rz", "raised_cosine", "sinc")
+
+# Change this to "pulse_sweep" to save eye diagrams for every scheme/pulse pair.
+DEMO_MODE = "single"  # "single" or "pulse_sweep"
+DEMO_RUN_NAME = "assignment_demo"
+
+
 def create_config(scheme: str = "polar") -> SimulationConfig:
     """Create the base simulation config.
 
@@ -156,6 +164,7 @@ def set_receiver(
 def set_output(
     config: SimulationConfig,
     root_dir: str | Path = "artifacts",
+    run_name: str | None = DEMO_RUN_NAME,
     save_text: bool = True,
     save_plots: bool = True,
     show_plots: bool = False,
@@ -168,6 +177,7 @@ def set_output(
 ) -> SimulationConfig:
     """Set result export and plotting variables."""
     config.output.root_dir = Path(root_dir)
+    config.output.run_name = run_name
     config.output.save_text = save_text
     config.output.save_plots = save_plots
     config.output.show_plots = show_plots
@@ -202,9 +212,13 @@ def set_ber_waterfall(
     return config
 
 
-def build_my_simulation() -> SimulationConfig:
+def build_my_simulation(
+    scheme: str = "polar",
+    pulse: str = "raised_cosine",
+    run_name: str | None = DEMO_RUN_NAME,
+) -> SimulationConfig:
     """Edit this function to control the full project from one file."""
-    config = create_config(scheme="polar")
+    config = create_config(scheme=scheme)
 
     set_source_signal(
         config,
@@ -220,14 +234,14 @@ def build_my_simulation() -> SimulationConfig:
     set_line_coding(config, one_level=1.0)
     set_pulse_shaping(
         config,
-        pulse="raised_cosine",
+        pulse=pulse,
         samples_per_symbol=32,
         rolloff=0.35,
         span_symbols=6,
     )
     set_channel(config, noise_enabled=True, snr_db=18.0, random_seed=7)
     set_receiver(config, sample_offset=0)
-    set_output(config, save_plots=True, show_plots=False)
+    set_output(config, run_name=run_name, save_plots=True, show_plots=False)
     set_ber_waterfall(
         config,
         enabled=True,
@@ -239,12 +253,49 @@ def build_my_simulation() -> SimulationConfig:
     return config
 
 
+def run_pulse_eye_sweep(
+    run_name: str = "pulse_eye_sweep",
+    schemes: tuple[str, ...] = SUPPORTED_SIGNALLING_SCHEMES,
+    pulses: tuple[str, ...] = SUPPORTED_PULSES,
+    enable_ber_waterfall: bool = False,
+) -> list[dict[str, float | int | str]]:
+    """Generate eye diagrams for every requested line-code and pulse combination.
+
+    Outputs are saved as:
+        artifacts/<run_name>/<scheme>/<pulse>/05_eye_tx.png
+        artifacts/<run_name>/<scheme>/<pulse>/06_eye_rx.png
+        artifacts/<run_name>/<scheme>/<pulse>/07_eye_matched.png
+
+    Keep enable_ber_waterfall=False for fast eye-diagram demos. Turn it on only
+    when you also want BER-vs-SNR files for every combination.
+    """
+    all_metrics: list[dict[str, float | int | str]] = []
+
+    for scheme in schemes:
+        for pulse in pulses:
+            config = build_my_simulation(scheme=scheme, pulse=pulse, run_name=run_name)
+            config.ber_curve.enabled = enable_ber_waterfall
+            metrics = run_simulation(config)
+            all_metrics.append(metrics)
+            print(
+                f"Saved {scheme}/{pulse} plots to {metrics['artifacts_dir']} "
+                f"(BER={metrics['ber']:.6f})"
+            )
+
+    return all_metrics
+
+
 def main() -> None:
-    config = build_my_simulation()
+    if DEMO_MODE == "pulse_sweep":
+        run_pulse_eye_sweep(run_name=DEMO_RUN_NAME, enable_ber_waterfall=False)
+        return
+
+    config = build_my_simulation(run_name=DEMO_RUN_NAME)
     metrics = run_simulation(config)
 
     print("Simulation completed")
     print(f"Scheme              : {metrics['scheme']}")
+    print(f"Pulse               : {metrics['pulse']}")
     print(f"Sample count        : {metrics['sample_count']}")
     print(f"Quantizer bits      : {metrics['bits_per_sample']}")
     print(f"Quantizer levels    : {metrics['quantization_levels']}")

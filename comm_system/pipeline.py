@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+import re
 
 import numpy as np
 
@@ -16,7 +18,7 @@ from .visualization import render_all_figures, save_ber_curve_plot
 
 
 def run_simulation(config: SimulationConfig) -> dict[str, float | int | str]:
-    output_dir = ensure_directory(config.output.root_dir / config.line_code.scheme.lower())
+    output_dir = _resolve_output_dir(config)
     quantizer_levels, quantizer_bits = resolve_quantizer_settings(config.quantizer)
 
     analog_time, analog_signal = generate_analog_signal(config.source)
@@ -49,6 +51,8 @@ def run_simulation(config: SimulationConfig) -> dict[str, float | int | str]:
 
     metrics = {
         "scheme": config.line_code.scheme,
+        "pulse": config.pulse_shape.pulse,
+        "run_name": config.output.run_name or "",
         "sample_count": int(len(sampled_signal)),
         "bits_per_sample": int(quantizer_bits),
         "quantization_levels": int(quantizer_levels),
@@ -106,7 +110,7 @@ def run_ber_curve(
     config: SimulationConfig,
     base_bitstream: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
-    output_dir = ensure_directory(config.output.root_dir / config.line_code.scheme.lower())
+    output_dir = _resolve_output_dir(config)
     bitstream = _resolve_ber_curve_bits(config, base_bitstream)
     pulse = build_pulse(config.pulse_shape)
 
@@ -219,6 +223,22 @@ def _write_text_artifacts(
     save_array_text(output_dir / "noise_samples.txt", noise)
     dump_json(output_dir / "metrics.json", metrics)
     dump_json(output_dir / "config_snapshot.json", dataclass_to_dict(config))
+
+
+def _resolve_output_dir(config: SimulationConfig) -> Path:
+    if not config.output.run_name:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        config.output.run_name = f"run_{timestamp}"
+
+    run_name = _safe_path_part(config.output.run_name)
+    scheme = _safe_path_part(config.line_code.scheme)
+    pulse = _safe_path_part(config.pulse_shape.pulse)
+    return ensure_directory(config.output.root_dir / run_name / scheme / pulse)
+
+
+def _safe_path_part(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip().lower())
+    return cleaned.strip("._") or "default"
 
 
 def _resolve_ber_curve_bits(
