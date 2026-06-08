@@ -52,7 +52,7 @@ def run_simulation(config: SimulationConfig) -> dict[str, float | int | str]:
     metrics = {
         "scheme": config.line_code.scheme,
         "pulse": config.pulse_shape.pulse,
-        "run_name": config.output.run_name or "",
+        "run_name": config.output.resolved_run_name or config.output.run_name or "",
         "sample_count": int(len(sampled_signal)),
         "bits_per_sample": int(quantizer_bits),
         "quantization_levels": int(quantizer_levels),
@@ -103,6 +103,7 @@ def run_simulation(config: SimulationConfig) -> dict[str, float | int | str]:
         pulse_config=config.pulse_shape,
     )
 
+    config.output.resolved_run_name = None
     return metrics
 
 
@@ -166,11 +167,13 @@ def run_ber_curve(
 
     save_ber_curve_plot(output_dir, config.output, snr_values, ber_values)
 
-    return {
+    curve_result = {
         "snr_db_values": snr_values,
         "ber_values": ber_values,
         "bit_errors": error_counts,
     }
+    config.output.resolved_run_name = None
+    return curve_result
 
 
 def _write_text_artifacts(
@@ -226,11 +229,12 @@ def _write_text_artifacts(
 
 
 def _resolve_output_dir(config: SimulationConfig) -> Path:
-    if not config.output.run_name:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        config.output.run_name = f"run_{timestamp}"
+    if config.output.resolved_run_name is None:
+        base_name = config.output.run_name or "run"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        config.output.resolved_run_name = f"{_safe_path_part(base_name)}_{timestamp}"
 
-    run_name = _safe_path_part(config.output.run_name)
+    run_name = _safe_path_part(config.output.resolved_run_name)
     scheme = _safe_path_part(config.line_code.scheme)
     pulse = _safe_path_part(config.pulse_shape.pulse)
     return ensure_directory(config.output.root_dir / run_name / scheme / pulse)

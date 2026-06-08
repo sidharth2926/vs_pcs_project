@@ -74,6 +74,7 @@ class ReceiverConfig:
 class OutputConfig:
     root_dir: Path = field(default_factory=lambda: Path("artifacts"))
     run_name: str | None = None
+    resolved_run_name: str | None = None
     save_plots: bool = False
     save_text: bool = True
     show_plots: bool = True

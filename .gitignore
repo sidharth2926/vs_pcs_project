@@ -1,5 +1,8 @@
 __pycache__/
 *.pyc
 artifacts/
+artifacts_*/
 .pip_tmp/
 .python_packages/
+pip/
+Microsoft/
